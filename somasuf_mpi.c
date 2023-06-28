@@ -33,27 +33,8 @@ void soma_sufixos(int n, int *vIn, int *vOut, int rank, int size)
         vOut[i] = vOut[i + 1] + vIn[i];
     }
 
-    // Comunicação entre os processos para combinar os resultados
-    for (int i = size - 1; i > 0; i--)
-    {
-        int recv_count;
-        if (rank == i)
-        {
-            // Envia os elementos locais para o processo 0
-            MPI_Send(&vOut[local_start], local_end - local_start, MPI_INT, 0, 0, MPI_COMM_WORLD);
-            break;
-        }
-        else if (rank == 0)
-        {
-            // Recebe os elementos dos outros processos
-            MPI_Recv(&vOut[local_start], local_end - local_start, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Get_count(MPI_STATUS_IGNORE, MPI_INT, &recv_count);
-            local_end = local_start + recv_count;
-        }
-    }
-
-    // Broadcast dos resultados para todos os processos
-    MPI_Bcast(vOut, n, MPI_INT, 0, MPI_COMM_WORLD);
+    // Redução coletiva para combinar os resultados
+    MPI_Allreduce(MPI_IN_PLACE, vOut, n, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 }
 
 int main(int argc, char **argv)
