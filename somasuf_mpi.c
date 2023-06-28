@@ -6,11 +6,65 @@
 void inicializa(int *n, int **vIn, int **vOut, char *nomeArqIn)
 {
     // Código de inicialização não foi alterado
+
+    // Abre arquivo texto de entrada
+	FILE *arqIn = fopen(nomeArqIn, "rt") ;
+
+	if (arqIn == NULL)
+	{
+		printf("\nArquivo texto de entrada não encontrado\n") ;
+		exit(1) ;
+	}
+
+	// Lê tamanho do vetor de entrada
+	fscanf(arqIn, "%d", n) ;
+
+	// Aloca vetores de entrada e saída
+	*vIn = (int *) malloc((*n) * sizeof(int));
+	if (*vIn == NULL)
+	{
+		printf("\nErro na alocação de estruturas\n") ;
+		exit(1) ;
+	}
+	*vOut = (int *) malloc((*n) * sizeof(int));
+	if (*vOut == NULL)
+	{
+		printf("\nErro na alocação de estruturas\n") ;
+		exit(1) ;
+	}
+
+	// Lê vetor do arquivo de entrada
+	for (int i = 0; i < (*n); i++)
+	{
+		fscanf(arqIn, "%d", &((*vIn)[i]));
+	}
+
+	// Fecha arquivo de entrada
+	fclose(arqIn) ;
 }
 
 void finaliza(int n, int *vIn, int *vOut, char *nomeArqOut)
 {
     // Código de finalização não foi alterado
+    // Cria arquivo texto de saída
+	FILE *arqOut = fopen(nomeArqOut, "wt") ;
+
+	// Escreve tamanho do vetor de saída
+	fprintf(arqOut, "%d\n", n) ;
+
+	// Escreve vetor do arquivo de saída
+	for (int i = 0; i < n; i++)
+	{
+		fprintf(arqOut, "%d ", vOut[i]);
+	}
+	fprintf(arqOut, "\n");
+
+	// Fecha arquivo de saída
+	fclose(arqOut) ;
+
+	// Libera vetores de entrada e saída
+	free(vIn);
+	free(vOut);
 }
 
 void soma_sufixos(int n, int *vIn, int *vOut, int rank, int size)
