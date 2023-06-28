@@ -1,3 +1,10 @@
+// ----------------------------------------------------------------------------
+// Soma de sufixos utilizando MPI 
+// Para compilar: mpicc somasuf.c -o somasuf -Wall
+// Para executar:  mpirun -oversubscribe -np 8 somasuf entrada.txt saida.txt
+// Código ajustado para que o processo 0 seja o único que possui vetores vIn e
+// vOut de tamanho n, enquanto os demais processos possuem vetores de tamanho n/p
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -5,66 +12,63 @@
 
 void inicializa(int *n, int **vIn, int **vOut, char *nomeArqIn)
 {
-    // Código de inicialização não foi alterado
 
     // Abre arquivo texto de entrada
-	FILE *arqIn = fopen(nomeArqIn, "rt") ;
+    FILE *arqIn = fopen(nomeArqIn, "rt");
 
-	if (arqIn == NULL)
-	{
-		printf("\nArquivo texto de entrada não encontrado\n") ;
-		exit(1) ;
-	}
+    if (arqIn == NULL)
+    {
+        printf("\nArquivo texto de entrada não encontrado\n");
+        exit(1);
+    }
 
-	// Lê tamanho do vetor de entrada
-	fscanf(arqIn, "%d", n) ;
+    // Lê tamanho do vetor de entrada
+    fscanf(arqIn, "%d", n);
 
-	// Aloca vetores de entrada e saída
-	*vIn = (int *) malloc((*n) * sizeof(int));
-	if (*vIn == NULL)
-	{
-		printf("\nErro na alocação de estruturas\n") ;
-		exit(1) ;
-	}
-	*vOut = (int *) malloc((*n) * sizeof(int));
-	if (*vOut == NULL)
-	{
-		printf("\nErro na alocação de estruturas\n") ;
-		exit(1) ;
-	}
+    // Aloca vetores de entrada e saída
+    *vIn = (int *)malloc((*n) * sizeof(int));
+    if (*vIn == NULL)
+    {
+        printf("\nErro na alocação de estruturas\n");
+        exit(1);
+    }
+    *vOut = (int *)malloc((*n) * sizeof(int));
+    if (*vOut == NULL)
+    {
+        printf("\nErro na alocação de estruturas\n");
+        exit(1);
+    }
 
-	// Lê vetor do arquivo de entrada
-	for (int i = 0; i < (*n); i++)
-	{
-		fscanf(arqIn, "%d", &((*vIn)[i]));
-	}
+    // Lê vetor do arquivo de entrada
+    for (int i = 0; i < (*n); i++)
+    {
+        fscanf(arqIn, "%d", &((*vIn)[i]));
+    }
 
-	// Fecha arquivo de entrada
-	fclose(arqIn) ;
+    // Fecha arquivo de entrada
+    fclose(arqIn);
 }
 
-void finaliza(int n, int *vIn, int *vOut, char *nomeArqOut)
+void finaliza(int n, int *vOut, char *nomeArqOut)
 {
-    // Código de finalização não foi alterado
     // Cria arquivo texto de saída
-	FILE *arqOut = fopen(nomeArqOut, "wt") ;
+    FILE *arqOut = fopen(nomeArqOut, "wt");
 
-	// Escreve tamanho do vetor de saída
-	fprintf(arqOut, "%d\n", n) ;
+    // Escreve tamanho do vetor de saída
+    fprintf(arqOut, "%d\n", n);
 
-	// Escreve vetor do arquivo de saída
-	for (int i = 0; i < n; i++)
-	{
-		fprintf(arqOut, "%d ", vOut[i]);
-	}
-	fprintf(arqOut, "\n");
+    // Escreve vetor do arquivo de saída
+    for (int i = 0; i < n; i++)
+    {
+        fprintf(arqOut, "%d ", vOut[i]);
+    }
+    fprintf(arqOut, "\n");
 
-	// Fecha arquivo de saída
-	fclose(arqOut) ;
+    // Fecha arquivo de saída
+    fclose(arqOut);
 
-	// Libera vetores de entrada e saída
-	free(vIn);
-	free(vOut);
+    // Libera vetor de saída
+    free(vOut);
 }
 
 void soma_sufixos(int n, int *vIn, int *vOut, int rank, int size)
@@ -172,7 +176,7 @@ int main(int argc, char **argv)
         printf("Tempo=%.2f milissegundos\n", tempo);
 
         // Processo mestre escreve dados no arquivo de saída e libera vetores de entrada e saída
-        finaliza(n, vIn, vOut, argv[2]);
+        finaliza(n, vOut, argv[2]);
     }
     else
     {
@@ -184,4 +188,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-
