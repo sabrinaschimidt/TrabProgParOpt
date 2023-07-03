@@ -10,89 +10,101 @@
 #include <sys/time.h>
 #include <mpi.h>
 
-void inicializa(int *n, int **vIn, int **vOut, char *nomeArqIn)
+void inicializa(int *n, int **vIn, int *nLocal, int *extraElements, char *nomeArqIn, int size)
 {
-
-    // Abre arquivo texto de entrada
     FILE *arqIn = fopen(nomeArqIn, "rt");
-
     if (arqIn == NULL)
     {
         printf("\nArquivo texto de entrada não encontrado\n");
         exit(1);
     }
 
-    // Lê tamanho do vetor de entrada
     fscanf(arqIn, "%d", n);
+    *nLocal = (*n) / size;
+    *extraElements = (*n) % size;
 
-    // Aloca vetores de entrada e saída
-    *vIn = (int *)malloc((*n) * sizeof(int));
+    int localSize = *nLocal + (*extraElements > 0 ? 1 : 0);
+    *vIn = (int *)malloc(localSize * sizeof(int));
     if (*vIn == NULL)
     {
         printf("\nErro na alocação de estruturas\n");
         exit(1);
     }
-    *vOut = (int *)malloc((*n) * sizeof(int));
-    if (*vOut == NULL)
-    {
-        printf("\nErro na alocação de estruturas\n");
-        exit(1);
-    }
 
-    // Lê vetor do arquivo de entrada
-    for (int i = 0; i < (*n); i++)
+    for (int i = 0; i < localSize; i++)
     {
         fscanf(arqIn, "%d", &((*vIn)[i]));
     }
 
-    // Fecha arquivo de entrada
     fclose(arqIn);
 }
 
-void finaliza(int n, int *vOut, char *nomeArqOut)
+void finaliza(int nLocal, int *vOut, char *nomeArqOut)
 {
-    // Cria arquivo texto de saída
     FILE *arqOut = fopen(nomeArqOut, "wt");
+    if (arqOut == NULL)
+    {
+        printf("\nErro na abertura do arquivo de saída\n");
+        exit(1);
+    }
 
-    // Escreve tamanho do vetor de saída
-    fprintf(arqOut, "%d\n", n);
-
-    // Escreve vetor do arquivo de saída
-    for (int i = 0; i < n; i++)
+    fprintf(arqOut, "%d\n", nLocal);
+    for (int i = 0; i < nLocal; i++)
     {
         fprintf(arqOut, "%d ", vOut[i]);
     }
     fprintf(arqOut, "\n");
 
-    // Fecha arquivo de saída
     fclose(arqOut);
-
-    // Libera vetor de saída
-    free(vOut);
 }
 
-void soma_sufixos(int n, int *vIn, int *vOut, int rank, int size)
+void soma_sufixos(int n, int *vIn, int *vOut, int rank, int size, int nLocal, int extraElements)
 {
-    // Calcula o intervalo de elementos que cada processo deve processar
-    int local_size = n / size;
-    int local_start = rank * local_size;
-    int local_end = local_start + local_size;
+    int localStart = rank * nLocal;
+    int localEnd = localStart + nLocal;
 
     if (rank == size - 1)
     {
-        // O último processo cuida dos elementos restantes, se houver
-        local_end += n % size;
+        localEnd += extraElements;
     }
 
-    // Calcula a soma de sufixos localmente
-    vOut[local_end - 1] = vIn[local_end - 1];
-    for (int i = local_end - 2; i >= local_start; i--)
+    int *tempOut = (int *)malloc((nLocal + 1) * sizeof(int));
+    if (tempOut == NULL)
     {
-        vOut[i] = vOut[i + 1] + vIn[i];
+        printf("\nErro na alocação de estruturas\n");
+        MPI_Finalize();
+        exit(1);
     }
 
-    // Redução coletiva para combinar os resultados
-    MPI_Allreduce(MPI_IN_PLACE, vOut, n, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    tempOut[0] = 0;
+    for (int i = 1; i <= nLocal; i++)
+    {
+        tempOut[i] = tempOut[i - 1] + vIn[localStart + i - 1];
+    }
+
+    int *prefixSum = (int *)malloc(size * sizeof(int));
+    if (prefixSum == NULL)
+    {
+        printf("\nErro na alocação de estruturas\n");
+        MPI_Finalize();
+        exit(1);
+    }
+
+    MPI_Allgather(&tempOut[nLocal], 1, MPI_INT, prefixSum, 1, MPI_INT, MPI_COMM_WORLD);
+
+    int sum = 0;
+    for (int i = 0; i < rank; i++)
+    {
+        sum += prefixSum[i];
+    }
+
+    for (int i = 0; i < nLocal; i++)
+    {
+        vOut[i] = vIn[i] + sum;
+    }
+
+    free(tempOut);
+    free(prefixSum);
 }
 
 int main(int argc, char **argv)
@@ -115,47 +127,16 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    if (rank == 0)
+    int nLocal, extraElements;
+
+    inicializa(&n, &vIn, &nLocal, &extraElements, argv[1], size);
+
+    vOut = (int *)malloc(nLocal * sizeof(int));
+    if (vOut == NULL)
     {
-        // Processo mestre aloca vetores de entrada e saída, lê dados do arquivo de entrada
-        inicializa(&n, &vIn, &vOut, argv[1]);
-    }
-
-    MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Todos os processos alocam espaço para os vetores de entrada e saída
-    vIn = (int *)malloc(n * sizeof(int));
-    vOut = (int *)malloc(n * sizeof(int));
-
-    // Processo mestre lê vetor do arquivo de entrada e envia para os outros processos
-    if (rank == 0)
-    {
-        FILE *arqIn = fopen(argv[1], "rt");
-        for (int i = 0; i < n; i++)
-        {
-            fscanf(arqIn, "%d", &vIn[i]);
-        }
-        fclose(arqIn);
-
-        // Envio dos dados para os outros processos
-        for (int i = 1; i < size; i++)
-        {
-            int local_size = n / size;
-            int local_start = i * local_size;
-            int local_end = local_start + local_size;
-
-            if (i == size - 1)
-            {
-                local_end += n % size;
-            }
-
-            MPI_Send(&vIn[local_start], local_end - local_start, MPI_INT, i, 0, MPI_COMM_WORLD);
-        }
-    }
-    else
-    {
-        // Recebe o vetor de entrada do processo mestre
-        MPI_Recv(vIn, n, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("\nErro na alocação de estruturas\n");
+        MPI_Finalize();
+        exit(1);
     }
 
     struct timeval tIni, tFim;
@@ -164,8 +145,7 @@ int main(int argc, char **argv)
         gettimeofday(&tIni, NULL);
     }
 
-    // Cada processo calcula a soma de sufixos localmente
-    soma_sufixos(n, vIn, vOut, rank, size);
+    soma_sufixos(n, vIn, vOut, rank, size, nLocal, extraElements);
 
     if (rank == 0)
     {
@@ -174,15 +154,30 @@ int main(int argc, char **argv)
         long microsegundos = tFim.tv_usec - tIni.tv_usec;
         double tempo = (segundos * 1e3) + (microsegundos * 1e-3);
         printf("Tempo=%.2f milissegundos\n", tempo);
+    }
 
-        // Processo mestre escreve dados no arquivo de saída e libera vetores de entrada e saída
-        finaliza(n, vOut, argv[2]);
-    }
-    else
+    int *gatherBuffer = NULL;
+    if (rank == 0)
     {
-        // Processos não mestres enviam o resultado para o processo mestre
-        MPI_Send(vOut, n, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        gatherBuffer = (int *)malloc(n * sizeof(int));
+        if (gatherBuffer == NULL)
+        {
+            printf("\nErro na alocação de estruturas\n");
+            MPI_Finalize();
+            exit(1);
+        }
     }
+
+    MPI_Gather(vOut, nLocal, MPI_INT, gatherBuffer, nLocal, MPI_INT, 0, MPI_COMM_WORLD);
+
+    if (rank == 0)
+    {
+        finaliza(n, gatherBuffer, argv[2]);
+        free(gatherBuffer);
+    }
+
+    free(vIn);
+    free(vOut);
 
     MPI_Finalize();
 
