@@ -1,7 +1,7 @@
 // ----------------------------------------------------------------------------
 // Soma de sufixos utilizando MPI 
-// Para compilar: mpicc somasuf.c -o somasuf -Wall
-// Para executar:  mpirun -oversubscribe -np 8 somasuf entrada.txt saida.txt
+// Para compilar: mpicc somasuf_mpi.c -o somasuf_mpi -Wall
+// Para executar:  mpirun -oversubscribe -np 8 somasuf_mpi arquivo_entrada.txt arquivo_saida.txt
 // Código ajustado para que o processo 0 seja o único que possui vetores vIn e
 // vOut de tamanho n, enquanto os demais processos possuem vetores de tamanho n/p
 
