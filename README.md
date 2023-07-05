@@ -13,3 +13,15 @@ Os requisitos do código são:
 6. O vetor de entrada é dividido em p partes de tamanho nLocal = n/p, onde n é o tamanho total do vetor de entrada, e o processo raiz distribui essas partes do vetor de entrada pelos processos usando a função `MPI_Gather()`.
 
 7. O processo raiz coleta as partes do vetor de saída dos processos utilizando a função `MPI_Gather()` e armazena os resultados individuais em um array no processo raiz.
+
+
+Versão adaptada do código, as seguintes alterações foram feitas:
+
+1. Divisão do vetor de entrada (vIn) nos processos:
+O código atual divide o vetor de entrada igualmente entre os processos usando MPI_Scatter. No entanto, para calcular a soma dos sufixos corretamente, cada processo precisa ter conhecimento do último elemento do vetor de entrada global. Portanto, a divisão atual não é adequada para a solução proposta. É necessário ajustar a divisão para garantir que cada processo tenha acesso a informações suficientes para calcular a soma dos sufixos corretamente.
+
+2. Cálculo da soma dos sufixos (soma_sufixos):
+O cálculo atual da soma dos sufixos parece estar correto. No entanto, o uso da função MPI_Allgather para coletar os últimos elementos dos vetores de saída (vOut) em todos os processos e obter o vetor prefixSum pode ser otimizado. Em vez disso, podemos usar MPI_Allreduce para calcular a soma acumulada de todos os elementos em vOut e obter o vetor prefixSum.
+
+3. Liberação de memória:
+O código atual libera corretamente a memória alocada para vIn e vOut. No entanto, há um problema na função finaliza em relação à alocação e liberação de memória para vOutGlobal. A memória para vOutGlobal só é alocada se rank for 0, mas a liberação de memória é feita em todos os processos. Isso pode causar um erro. A alocação e liberação de memória para vOutGlobal devem ser feitas apenas no processo com rank igual a 0.

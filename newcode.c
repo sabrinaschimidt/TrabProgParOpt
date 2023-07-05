@@ -3,101 +3,121 @@
 #include <sys/time.h>
 #include <mpi.h>
 
-void inicializa(int *n, int **vIn, int *nLocal, int *extraElements, char *nomeArqIn, int size)
+void inicializa(int *n, int **vIn, int *nLocal, char *nomeArqIn, int rank, int size)
 {
     FILE *arqIn = fopen(nomeArqIn, "rt");
     if (arqIn == NULL)
     {
         printf("\nArquivo texto de entrada não encontrado\n");
+        MPI_Finalize();
         exit(1);
     }
 
-    fscanf(arqIn, "%d", n);
-    *nLocal = (*n) / size;
-    *extraElements = (*n) % size;
+    if (rank == 0)
+    {
+        fscanf(arqIn, "%d", n);
+    }
 
-    int localSize = *nLocal + (*extraElements > 0 ? 1 : 0);
-    *vIn = (int *)malloc(localSize * sizeof(int));
+    MPI_Bcast(n, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    *nLocal = (*n + size - 1) / size;  // Ajuste na divisão para garantir que todos os processos tenham informações suficientes
+
+    *vIn = (int *)malloc((*nLocal) * sizeof(int));
     if (*vIn == NULL)
     {
         printf("\nErro na alocação de estruturas\n");
+        MPI_Finalize();
         exit(1);
     }
 
-    for (int i = 0; i < localSize; i++)
+    int *tempVIn = NULL;
+
+    if (rank == 0)
     {
-        fscanf(arqIn, "%d", &((*vIn)[i]));
+        tempVIn = (int *)malloc((*n) * sizeof(int));
+        if (tempVIn == NULL)
+        {
+            printf("\nErro na alocação de estruturas\n");
+            MPI_Finalize();
+            exit(1);
+        }
+
+        for (int i = 0; i < *n; i++)
+        {
+            fscanf(arqIn, "%d", &(tempVIn[i]));
+        }
+
+        fclose(arqIn);
     }
 
-    fclose(arqIn);
+    MPI_Scatter(tempVIn, *nLocal, MPI_INT, *vIn, *nLocal, MPI_INT, 0, MPI_COMM_WORLD);
+
+    free(tempVIn);
 }
 
-void finaliza(int nLocal, int *vOut, char *nomeArqOut)
+void finaliza(int nLocal, int *vOut, char *nomeArqOut, int rank, int size)
 {
-    FILE *arqOut = fopen(nomeArqOut, "wt");
-    if (arqOut == NULL)
+    int *vOutGlobal = NULL;
+
+    if (rank == 0)
     {
-        printf("\nErro na abertura do arquivo de saída\n");
-        exit(1);
+        vOutGlobal = (int *)malloc(nLocal * size * sizeof(int));
+        if (vOutGlobal == NULL)
+        {
+            printf("\nErro na alocação de estruturas\n");
+            MPI_Finalize();
+            exit(1);
+        }
     }
 
-    fprintf(arqOut, "%d\n", nLocal);
+    MPI_Gather(vOut, nLocal, MPI_INT, vOutGlobal, nLocal, MPI_INT, 0, MPI_COMM_WORLD);
+
+    if (rank == 0)
+    {
+        FILE *arqOut = fopen(nomeArqOut, "wt");
+        if (arqOut == NULL)
+        {
+            printf("\nErro na abertura do arquivo de saída\n");
+            MPI_Finalize();
+            exit(1);
+        }
+
+        fprintf(arqOut, "%d\n", nLocal * size);
+        for (int i = 0; i < nLocal * size; i++)
+        {
+            fprintf(arqOut, "%d ", vOutGlobal[i]);
+        }
+        fprintf(arqOut, "\n");
+
+        fclose(arqOut);
+
+        free(vOutGlobal);
+    }
+}
+
+
+void soma_sufixos(int n, int *vIn, int *vOut, int rank, int size, int nLocal)
+{
+    int localSum = 0;
     for (int i = 0; i < nLocal; i++)
     {
-        fprintf(arqOut, "%d ", vOut[i]);
+        localSum += vIn[i];
+        vOut[i] = localSum;
     }
-    fprintf(arqOut, "\n");
-
-    fclose(arqOut);
-}
-
-void soma_sufixos(int n, int *vIn, int *vOut, int rank, int size, int nLocal, int extraElements)
-{
-    int localStart = rank * nLocal;
-    int localEnd = localStart + nLocal;
-
-    if (rank == size - 1)
-    {
-        localEnd += extraElements;
-    }
-
-    int *tempOut = (int *)malloc((nLocal + 1) * sizeof(int));
-    if (tempOut == NULL)
-    {
-        printf("\nErro na alocação de estruturas\n");
-        MPI_Finalize();
-        exit(1);
-    }
-
-    tempOut[0] = 0;
-    for (int i = 1; i <= nLocal; i++)
-    {
-        tempOut[i] = tempOut[i - 1] + vIn[localStart + i - 1];
-    }
-
-    int *prefixSum = (int *)malloc(size * sizeof(int));
-    if (prefixSum == NULL)
-    {
-        printf("\nErro na alocação de estruturas\n");
-        MPI_Finalize();
-        exit(1);
-    }
-
-    MPI_Allgather(&tempOut[nLocal], 1, MPI_INT, prefixSum, 1, MPI_INT, MPI_COMM_WORLD);
 
     int sum = 0;
+    MPI_Allreduce(&vOut[nLocal - 1], &sum, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);  // Usar MPI_Allreduce para calcular a soma acumulada de todos os elementos
+
+    int prefixSum = 0;
     for (int i = 0; i < rank; i++)
     {
-        sum += prefixSum[i];
+        prefixSum += sum;
     }
 
     for (int i = 0; i < nLocal; i++)
     {
-        vOut[i] = vIn[i] + sum;
+        vOut[i] += prefixSum;
     }
-
-    free(tempOut);
-    free(prefixSum);
 }
 
 int main(int argc, char **argv)
@@ -120,9 +140,9 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    int nLocal, extraElements;
+    int nLocal;
 
-    inicializa(&n, &vIn, &nLocal, &extraElements, argv[1], size);
+    inicializa(&n, &vIn, &nLocal, argv[1], rank, size);
 
     vOut = (int *)malloc(nLocal * sizeof(int));
     if (vOut == NULL)
@@ -138,7 +158,7 @@ int main(int argc, char **argv)
         gettimeofday(&tIni, NULL);
     }
 
-    soma_sufixos(n, vIn, vOut, rank, size, nLocal, extraElements);
+    soma_sufixos(n, vIn, vOut, rank, size, nLocal);
 
     if (rank == 0)
     {
@@ -149,25 +169,7 @@ int main(int argc, char **argv)
         printf("Tempo=%.2f milissegundos\n", tempo);
     }
 
-    int *gatherBuffer = NULL;
-    if (rank == 0)
-    {
-        gatherBuffer = (int *)malloc(n * sizeof(int));
-        if (gatherBuffer == NULL)
-        {
-            printf("\nErro na alocação de estruturas\n");
-            MPI_Finalize();
-            exit(1);
-        }
-    }
-
-    MPI_Gather(vOut, nLocal, MPI_INT, gatherBuffer, nLocal, MPI_INT, 0, MPI_COMM_WORLD);
-
-    if (rank == 0)
-    {
-        finaliza(n, gatherBuffer, argv[2]);
-        free(gatherBuffer);
-    }
+    finaliza(nLocal, vOut, argv[2], rank, size);
 
     free(vIn);
     free(vOut);
